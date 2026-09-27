@@ -107,7 +107,7 @@ cmd({
 
 // ==================== STYLE 5: CARTOON STYLE ====================
 cmd({
-    pattern: "cartoon",
+    pattern: "cartoonstyle",
     alias: ["cartoonstyle", "cartoontxt"],
     desc: "Cartoon text style",
     category: " ̶ͨ ̶ͧ ̶ͭ ̶ͤ➸⃝ 𝙇𝙊𝙂𝙊 𝙉𝘼𝙈𝙀 ",
