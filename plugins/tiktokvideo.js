@@ -1,148 +1,305 @@
 // ERFAN-MD
 import { fileURLToPath } from 'url';
-import path from 'path';
-import axios from 'axios';
 import { cmd } from '../command.js';
-import config from '../config.js';
+import axios from 'axios';
+import fs from 'node:fs';
+import os from 'node:os';
+import path from 'node:path';
 
 const __filename = fileURLToPath(import.meta.url);
-const __dirname = path.dirname(__filename);
+const API_BASE = "https://xjawadtechyt.vercel.app";
 
-// ═══════════════════════════════════════════════════════════
-// 🎵 TIKTOK SCRAPERS (LINK + SEARCH SCRAPER)
-// ═══════════════════════════════════════════════════════════
-
-const isTikTokUrl = (str) => {
-    return /(tiktok\.com|vt\.tiktok\.com|vm\.tiktok\.com)/i.test(str);
+const toSmallCaps = (text) => {
+    const map = {
+        'a': 'ᴀ', 'b': 'ʙ', 'c': 'ᴄ', 'd': 'ᴅ', 'e': 'ᴇ', 'f': 'ғ', 'g': 'ɢ', 'h': 'ʜ', 'i': 'ɪ', 'j': 'ᴊ',
+        'k': 'ᴋ', 'l': 'ʟ', 'm': 'ᴍ', 'n': 'ɴ', 'o': 'ᴏ', 'p': 'ᴘ', 'q': 'ǫ', 'r': 'ʀ', 's': 's', 't': 'ᴛ',
+        'u': 'ᴜ', 'v': 'ᴠ', 'w': 'ᴡ', 'x': 'x', 'y': 'ʏ', 'z': 'ᴢ'
+    };
+    return text.split('').map(c => map[c.toLowerCase()] || c).join('');
 };
 
-// 1. Aapka direct link downloader (Xemoz)
-async function downloadXemoz(url) {
-    try {
-        const res = await axios.get(`https://api-xemoz-official.my.id/api/donwloader/tiktok.php?url=${encodeURIComponent(url)}`, {
-            timeout: 25000,
-            headers: {
-                'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36'
+// ============================================
+// AUDIO & VIDEO APIS
+// ============================================
+const getAudioAPIs = (url) => [
+    { url: `\({API_BASE}/yta8?url=\){encodeURIComponent(url)}`, timeout: 25000 },
+    { url: `\({API_BASE}/yta9?url=\){encodeURIComponent(url)}`, timeout: 25000 },
+    { url: `\({API_BASE}/yta7?url=\){encodeURIComponent(url)}`, timeout: 25000 },
+    { url: `\({API_BASE}/yta6?url=\){encodeURIComponent(url)}`, timeout: 25000 },
+    { url: `\({API_BASE}/yta1?url=\){encodeURIComponent(url)}`, timeout: 25000 },
+    { url: `\({API_BASE}/yta2?url=\){encodeURIComponent(url)}`, timeout: 25000 },
+    { url: `\({API_BASE}/yta3?url=\){encodeURIComponent(url)}`, timeout: 25000 },
+    { url: `\({API_BASE}/yta4?url=\){encodeURIComponent(url)}`, timeout: 25000 },
+    { url: `\({API_BASE}/yta5?url=\){encodeURIComponent(url)}`, timeout: 25000 }
+];
+
+const getNormalVideoAPIs = (url) => [
+    `\({API_BASE}/ytv3?url=\){encodeURIComponent(url)}`,
+    `\({API_BASE}/ytv1?url=\){encodeURIComponent(url)}`,
+    `\({API_BASE}/ytv2?url=\){encodeURIComponent(url)}`
+];
+
+const getFallbackVideoAPI = (url) => `\({API_BASE}/ytdl?url=\){encodeURIComponent(url)}`;
+
+// ============================================
+// DISPATCH HELPERS
+// ============================================
+async function sendAudio(conn, from, mek, vid) {
+    const audioAPIs = getAudioAPIs(vid.url);
+    for (const api of audioAPIs) {
+        try {
+            const response = await axios.get(api.url, { timeout: api.timeout });
+            const audioUrl = response.data?.status && response.data?.download?.url ? response.data.download.url : null;
+            if (audioUrl) {
+                await conn.sendMessage(from, {
+                    audio: { url: audioUrl },
+                    mimetype: "audio/mpeg",
+                    fileName: `${vid.title}.mp3`,
+                    ptt: false
+                }, { quoted: mek });
+                return true;
             }
-        });
-
-        const data = res.data;
-        if (data?.status === true && data?.result?.result?.video?.length > 0) {
-            return {
-                videoUrl: data.result.result.video[0],
-                username: data.result.result.username || "Unknown",
-                title: data.result.result.type || "TikTok Video",
-                duration: data.result.result.duration || "0:00",
-                stats: data.result.result.stats || { views: "0", likes: "0", comments: "0", shares: "0" }
-            };
+        } catch {
+            continue;
         }
-        return null;
-    } catch {
-        return null;
     }
+    return false;
 }
 
-// 2. Direct TikTok Search Scraper (TikWM Native Backend)
-async function searchTikTokScraper(keyword) {
+async function sendVideo(conn, from, mek, vid) {
+    const normalVideoAPIs = getNormalVideoAPIs(vid.url);
+    for (const apiUrl of normalVideoAPIs) {
+        try {
+            const response = await axios.get(apiUrl, { timeout: 25000 });
+            const videoUrl = response.data?.status && response.data?.download?.url ? response.data.download.url : null;
+            if (videoUrl) {
+                await conn.sendMessage(from, {
+                    video: { url: videoUrl },
+                    mimetype: 'video/mp4',
+                    caption: `🎬 *${vid.title}*\n\n> Powered by ERFAN-MD`
+                }, { quoted: mek });
+                return true;
+            }
+        } catch {
+            continue;
+        }
+    }
+
+    // Disk stream fallback
+    let tempFile = null;
     try {
-        const formData = new URLSearchParams();
-        formData.append('keywords', keyword);
-        formData.append('count', '10');
-        formData.append('cursor', '0');
-        formData.append('web', '1');
-        formData.append('hd', '1');
+        const fallbackUrl = getFallbackVideoAPI(vid.url);
+        const response = await axios.get(fallbackUrl, { timeout: 25000 });
+        if (response.data?.status && response.data?.download?.urlx) {
+            const downloadURL = response.data.download.urlx;
+            const title = response.data.download.title || vid.title;
+            tempFile = path.join(os.tmpdir(), `yt_${Date.now()}.mp4`);
 
-        const res = await axios.post('https://www.tikwm.com/api/feed/search', formData.toString(), {
-            headers: {
-                'Content-Type': 'application/x-www-form-urlencoded; charset=UTF-8',
-                'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36',
-                'Accept': 'application/json, text/javascript, */*; q=0.01',
-                'Origin': 'https://www.tikwm.com',
-                'Referer': 'https://www.tikwm.com/'
-            },
-            timeout: 25000
-        });
+            const fileRes = await axios({ method: 'GET', url: downloadURL, responseType: 'stream' });
+            const writer = fs.createWriteStream(tempFile);
+            fileRes.data.pipe(writer);
 
-        const data = res.data;
-        if (data?.code === 0 && data?.data?.videos?.length > 0) {
-            // Pehli working video select karega
-            const video = data.data.videos[0];
-            const cleanUrl = video.play.startsWith('http') ? video.play : `https://www.tikwm.com${video.play}`;
+            await new Promise((resolve, reject) => {
+                writer.on('finish', resolve);
+                writer.on('error', reject);
+            });
 
-            return {
-                videoUrl: cleanUrl,
-                username: video.author?.unique_id || video.author?.nickname || "TikTok User",
-                title: video.title || keyword,
-                duration: `${video.duration || 0}s`,
-                stats: {
-                    views: video.play_count || "0",
-                    likes: video.digg_count || "0",
-                    comments: video.comment_count || "0",
-                    shares: video.share_count || "0"
-                }
-            };
+            await conn.sendMessage(from, {
+                video: { url: tempFile },
+                mimetype: "video/mp4",
+                caption: `🎬 *${title}*\n\n> Powered by ERFAN-MD`
+            }, { quoted: mek });
+
+            try { if (fs.existsSync(tempFile)) fs.unlinkSync(tempFile); } catch {}
+            return true;
         }
-        return null;
     } catch {
-        return null;
+        try { if (tempFile && fs.existsSync(tempFile)) fs.unlinkSync(tempFile); } catch {}
+    }
+    return false;
+}
+
+// Random video finder and direct downloader
+async function handleRandomVideo(conn, mek, m, from, defaultQuery, userQuery, tagTitle) {
+    try {
+        await conn.sendMessage(from, { react: { text: '⏳', key: m.key } });
+        const { default: yts } = await import('yt-search');
+        const finalQuery = userQuery ? `\({userQuery}\){defaultQuery}` : defaultQuery;
+
+        const search = await yts(finalQuery);
+        if (!search || !search.videos || !search.videos.length) {
+            await conn.sendMessage(from, { react: { text: '❌', key: m.key } });
+            return await conn.sendMessage(from, { text: `❌ Video nahi mili!` }, { quoted: mek });
+        }
+
+        // Random pick from top 15 results
+        const pool = search.videos.slice(0, Math.min(15, search.videos.length));
+        const vid = pool[Math.floor(Math.random() * pool.length)];
+
+        const success = await sendVideo(conn, from, mek, vid);
+        if (success) {
+            await conn.sendMessage(from, { react: { text: '✅', key: m.key } });
+        } else {
+            await conn.sendMessage(from, { react: { text: '❌', key: m.key } });
+            await conn.sendMessage(from, { text: "❌ Video download fail ho gayi! Dobara try karein." }, { quoted: mek });
+        }
+    } catch (e) {
+        console.error(`Error in ${tagTitle}:`, e);
+        await conn.sendMessage(from, { react: { text: '❌', key: m.key } });
     }
 }
 
-// ═══════════════════════════════════════════════════════════
-// 🎵 COMMAND EXECUTION
-// ═══════════════════════════════════════════════════════════
+// ============================================
+// 1. RANDOM DIRECT VIDEO COMMANDS
+// ============================================
 
 cmd({
-    pattern: "ttvid",
-    alias: ["tt", "ttdl", "tts"],
-    desc: "Direct TikTok link downloader and live keyword search",
+    pattern: "bts",
+    alias: ["btsvideo", "btsarmy"],
+    desc: "Download random BTS video",
     category: "download",
-    react: "🎵",
+    react: "💜",
     filename: __filename
-}, async (conn, mek, m, { from, q, reply, userConfig }) => {
+}, async (conn, mek, m, { from, text }) => {
+    await handleRandomVideo(conn, mek, m, from, "BTS army shorts video edit", text, "BTS");
+});
+
+cmd({
+    pattern: "girl",
+    alias: ["girlvideo", "girls"],
+    desc: "Download random girl video/status",
+    category: "download",
+    react: "👧",
+    filename: __filename
+}, async (conn, mek, m, { from, text }) => {
+    await handleRandomVideo(conn, mek, m, from, "girl aesthetic status video", text, "Girl");
+});
+
+cmd({
+    pattern: "status",
+    alias: ["statusvideo", "ytstatus"],
+    desc: "Download random status video",
+    category: "download",
+    react: "✨",
+    filename: __filename
+}, async (conn, mek, m, { from, text }) => {
+    await handleRandomVideo(conn, mek, m, from, "whatsapp status video shorts", text, "Status");
+});
+
+cmd({
+    pattern: "sigmaboy",
+    alias: ["sigma", "sigmarule"],
+    desc: "Download random sigma boy edit video",
+    category: "download",
+    react: "🗿",
+    filename: __filename
+}, async (conn, mek, m, { from, text }) => {
+    await handleRandomVideo(conn, mek, m, from, "sigma boy attitude video edit", text, "SigmaBoy");
+});
+
+cmd({
+    pattern: "sigmagirl",
+    alias: ["sigmagirlvideo"],
+    desc: "Download random sigma girl edit video",
+    category: "download",
+    react: "🔥",
+    filename: __filename
+}, async (conn, mek, m, { from, text }) => {
+    await handleRandomVideo(conn, mek, m, from, "sigma girl attitude rule video", text, "SigmaGirl");
+});
+
+cmd({
+    pattern: "romantic",
+    alias: ["lovevideo", "romanticstatus"],
+    desc: "Download random romantic video",
+    category: "download",
+    react: "❤️",
+    filename: __filename
+}, async (conn, mek, m, { from, text }) => {
+    await handleRandomVideo(conn, mek, m, from, "romantic love status video shorts", text, "Romantic");
+});
+
+// ============================================
+// 2. NAAT COMMAND (1 for Audio, 2 for Video)
+// ============================================
+
+cmd({
+    pattern: "naat",
+    alias: ["naatsharif", "naats"],
+    desc: "Search Naat and choose between Audio or Video",
+    category: "download",
+    react: "🕌",
+    filename: __filename
+}, async (conn, mek, m, { from, text, reply }) => {
     try {
-        if (!q) {
-            return await reply("🎯 *Input required!*\n\n• Link se: `.tt https://vt.tiktok.com/xxxx/`\n• Search se: `.tt imran khan speech`");
-        }
+        if (!text) return reply("🕌 Naat ka naam likhein!\n\n*Example:* `.naat faslon ko takalluf`");
 
         await conn.sendMessage(from, { react: { text: '⏳', key: m.key } });
+        const { default: yts } = await import('yt-search');
 
-        let result = null;
-
-        // Condition Check: Link hai ya search query?
-        if (isTikTokUrl(q)) {
-            result = await downloadXemoz(q);
-        } else {
-            result = await searchTikTokScraper(q);
+        const search = await yts(`${text} naat`);
+        if (!search || !search.videos || !search.videos.length) {
+            return reply("❌ Koi Naat nahi mili!");
         }
 
-        if (!result || !result.videoUrl) {
-            await conn.sendMessage(from, { react: { text: '❌', key: m.key } });
-            return await reply("❌ *Video nahi mil saki!* Dobara try karein ya keywords change karein.");
-        }
+        const vid = search.videos[0];
 
-        const BOT_NAME = userConfig?.BOT_NAME || config.BOT_NAME || "ERFAN-MD";
+        const caption = `*╭┈───〔 ${toSmallCaps('Naat Sharif')} 〕┈───⊷*
+*├▢ 🕌 Title:* ${vid.title}
+*├▢ 📺 Channel:* ${vid.author?.name || 'Unknown'}
+*├▢ ⏰ Duration:* ${vid.timestamp}
+*╰───────────────────⊷*
+*╭───⬡ ${toSmallCaps('Select Format')} ⬡───*
+*┋ ⬡ 1* 🎧 ${toSmallCaps('Audio (MP3)')}
+*┋ ⬡ 2* 📹 ${toSmallCaps('Video (MP4)')}
+*╰───────────────────⊷*
 
-        await conn.sendMessage(from, {
-            video: { url: result.videoUrl },
-            mimetype: 'video/mp4',
-            caption: `🎵 *TikTok Player*\n\n` +
-                     `📝 *Title:* ${result.title}\n` +
-                     `👤 *Username:* ${result.username}\n` +
-                     `⏱️ *Duration:* ${result.duration}\n` +
-                     `📊 *Stats:*\n` +
-                     `   👁️ Views: ${result.stats.views}\n` +
-                     `   ❤️ Likes: ${result.stats.likes}\n` +
-                     `   💬 Comments: ${result.stats.comments}\n` +
-                     `   🔄 Shares: ${result.stats.shares}\n\n` +
-                     `*Powered by ${BOT_NAME} ✅*`
+_Reply with *1* for Audio or *2* for Video!_
+> Powered by ERFAN-MD`;
+
+        const sent = await conn.sendMessage(from, {
+            image: { url: vid.thumbnail },
+            caption
         }, { quoted: mek });
 
-        await conn.sendMessage(from, { react: { text: '✅', key: m.key } });
+        const msgId = sent.key.id;
+
+        const naatListener = async (msgData) => {
+            const received = msgData.messages[0];
+            if (!received.message) return;
+
+            const selected = received.message.conversation || received.message.extendedTextMessage?.text;
+            const replyToBot = received.message.extendedTextMessage?.contextInfo?.stanzaId === msgId;
+
+            if (replyToBot) {
+                conn.ev.off("messages.upsert", naatListener);
+                await conn.sendMessage(from, { react: { text: '⬇️', key: received.key } });
+
+                const choice = selected?.trim();
+                let isDone = false;
+
+                if (choice === "1") {
+                    isDone = await sendAudio(conn, from, received, vid);
+                } else if (choice === "2") {
+                    isDone = await sendVideo(conn, from, received, vid);
+                } else {
+                    return await conn.sendMessage(from, { text: "❌ Invalid option! Sirf 1 ya 2 reply karein." }, { quoted: received });
+                }
+
+                if (isDone) {
+                    await conn.sendMessage(from, { react: { text: '✅', key: received.key } });
+                } else {
+                    await conn.sendMessage(from, { text: "❌ Download fail ho gaya! Dobara koshish karein." }, { quoted: received });
+                }
+            }
+        };
+
+        conn.ev.on("messages.upsert", naatListener);
+        setTimeout(() => { conn.ev.off("messages.upsert", naatListener); }, 30000);
 
     } catch (e) {
-        console.error("❌ Error in TikTok command:", e);
-        await reply("⚠️ *Error:* " + (e.message || "Failed to process video"));
+        console.error("Naat error:", e);
+        reply("❌ Error: " + e.message);
         await conn.sendMessage(from, { react: { text: '❌', key: m.key } });
     }
 });
