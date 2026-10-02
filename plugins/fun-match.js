@@ -1,11 +1,53 @@
 // ERFAN-MD
 import { fileURLToPath } from 'url';
 import path from 'path';
+import axios from 'axios';
 import { cmd } from '../command.js';
+import { fetchGif, gifToVideo } from '../lib/fetchgif.js';
+
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 
-// Command for random boy selection
+// ═══════════════════════════════════════════════════════════
+// Reaction GIF sources (same pipeline as the working .kiss)
+// Primary : nekos.best  (https://nekos.best/api/v2/{endpoint})
+// Fallback: purrbot.site (https://purrbot.site/api/img/sfw/{endpoint}/gif)
+// ═══════════════════════════════════════════════════════════
+
+async function getReactionGifUrl(nbEndpoint, pbEndpoint) {
+    if (nbEndpoint) {
+        try {
+            const res = await axios.get(`https://nekos.best/api/v2/${nbEndpoint}`);
+            const url = res.data?.results?.[0]?.url;
+            if (url) return url;
+        } catch (e) {
+            // fall through to purrbot
+        }
+    }
+
+    if (pbEndpoint) {
+        try {
+            const res = await axios.get(`https://purrbot.site/api/img/sfw/${pbEndpoint}/gif`);
+            if (res.data && res.data.error === false && res.data.link) {
+                return res.data.link;
+            }
+        } catch (e) {
+            // fall through to throw below
+        }
+    }
+
+    throw new Error("No reaction GIF source available for this command.");
+}
+
+async function getReactionVideo(nbEndpoint, pbEndpoint) {
+    const gifUrl = await getReactionGifUrl(nbEndpoint, pbEndpoint);
+    const gifBuffer = await fetchGif(gifUrl);
+    return await gifToVideo(gifBuffer);
+}
+
+// ═══════════════════════════════════════════════════════════
+// BACHHA (Random Boy)
+// ═══════════════════════════════════════════════════════════
 cmd({
   pattern: "bacha",
   alias: ["boy", "larka"],
@@ -13,24 +55,31 @@ cmd({
   react: "👦",
   category: "fun",
   filename: __filename
-}, async (conn, mek, store, { isGroup, groupMetadata, reply, sender }) => {
+}, async (conn, mek, store, { isGroup, reply, sender }) => {
   try {
     if (!isGroup) return reply("❌ This command can only be used in groups!");
 
-    const participants = groupMetadata.participants;
-    
-    // Filter out bot and get random participant
-    const eligible = participants.filter(p => !p.id.includes(conn.user.id.split('@')[0]));
-    
+    // ✅ Safely fetch group metadata from conn
+    const groupMetadata = await conn.groupMetadata(mek.chat);
+    const participants = groupMetadata.participants || [];
+
+    const botId = conn.user.id.split(':')[0] + '@s.whatsapp.net';
+    const eligible = participants.filter(p => p.id !== botId);
+
     if (eligible.length < 1) return reply("❌ No eligible participants found!");
 
     const randomUser = eligible[Math.floor(Math.random() * eligible.length)];
-    
+
+    // ✅ Same kiss GIF pipeline as .marige
+    const videoBuffer = await getReactionVideo("kiss", "kiss");
+
     await conn.sendMessage(
       mek.chat,
-      { 
-        text: `👦 *Yeh lo tumhara Bacha!* \n\n@${randomUser.id.split('@')[0]} is your handsome boy! 😎`, 
-        mentions: [randomUser.id] 
+      {
+        video: videoBuffer,
+        caption: `👦 *Yeh lo tumhara Bacha!*\n\n@${randomUser.id.split('@')[0]} is your handsome boy! 😎`,
+        gifPlayback: true,
+        mentions: [randomUser.id]
       },
       { quoted: mek }
     );
@@ -41,7 +90,9 @@ cmd({
   }
 });
 
-// Command for random girl selection
+// ═══════════════════════════════════════════════════════════
+// BACHI (Random Girl)
+// ═══════════════════════════════════════════════════════════
 cmd({
   pattern: "bachi",
   alias: ["girl", "kuri", "larki"],
@@ -49,24 +100,31 @@ cmd({
   react: "👧",
   category: "fun",
   filename: __filename
-}, async (conn, mek, store, { isGroup, groupMetadata, reply, sender }) => {
+}, async (conn, mek, store, { isGroup, reply, sender }) => {
   try {
     if (!isGroup) return reply("❌ This command can only be used in groups!");
 
-    const participants = groupMetadata.participants;
-    
-    // Filter out bot and get random participant
-    const eligible = participants.filter(p => !p.id.includes(conn.user.id.split('@')[0]));
-    
+    // ✅ Safely fetch group metadata from conn
+    const groupMetadata = await conn.groupMetadata(mek.chat);
+    const participants = groupMetadata.participants || [];
+
+    const botId = conn.user.id.split(':')[0] + '@s.whatsapp.net';
+    const eligible = participants.filter(p => p.id !== botId);
+
     if (eligible.length < 1) return reply("❌ No eligible participants found!");
 
     const randomUser = eligible[Math.floor(Math.random() * eligible.length)];
-    
+
+    // ✅ Same kiss GIF pipeline as .marige
+    const videoBuffer = await getReactionVideo("kiss", "kiss");
+
     await conn.sendMessage(
       mek.chat,
-      { 
-        text: `👧 *Yeh lo tumhari Bachi!* \n\n@${randomUser.id.split('@')[0]} is your beautiful girl! 💖`, 
-        mentions: [randomUser.id] 
+      {
+        video: videoBuffer,
+        caption: `👧 *Yeh lo tumhari Bachi!*\n\n@${randomUser.id.split('@')[0]} is your beautiful girl! 💖`,
+        gifPlayback: true,
+        mentions: [randomUser.id]
       },
       { quoted: mek }
     );
