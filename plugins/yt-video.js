@@ -7,7 +7,7 @@ import os from 'node:os';
 import path from 'node:path';
 
 const __filename = fileURLToPath(import.meta.url);
-const API_BASE = "https://xjawadtechyt.vercel.app";
+const API_BASE = "https://jawadtechhub.onrender.com";
 
 const toSmallCaps = (text) => {
     const map = {
